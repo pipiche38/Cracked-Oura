@@ -15,9 +15,14 @@ import traceback
 # --- Configuration ---
 
 try:
-    # Use user data directory for database
-    BASE_DIR = get_user_data_dir()
-    DB_PATH = os.path.join(BASE_DIR, "oura_database.db")
+    # DB_PATH env var wins (set by Docker / custom deployments); fall back to user data dir
+    _db_path_env = os.environ.get("DB_PATH")
+    if _db_path_env:
+        DB_PATH = _db_path_env
+        BASE_DIR = os.path.dirname(_db_path_env)
+    else:
+        BASE_DIR = str(get_user_data_dir())
+        DB_PATH = os.path.join(BASE_DIR, "oura_database.db")
     DATABASE_URL = f"sqlite:///{DB_PATH}"
 
     # Verify we can write to this directory

@@ -1,11 +1,27 @@
 import json
-from typing import List, Dict, Any
+import httpx
+from typing import List, Dict, Any, Optional
 from langchain_ollama import ChatOllama
 from langchain_community.utilities import SQLDatabase
 from langchain_community.agent_toolkits import create_sql_agent
 from langchain_core.callbacks import StreamingStdOutCallbackHandler
 from backend.src.config import config_manager
 from backend.src.paths import get_user_data_dir
+
+
+def _check_ollama_reachable(host: str) -> Optional[str]:
+    """Returns an error string if the Ollama host is unreachable, else None."""
+    try:
+        httpx.get(f"{host}/api/tags", timeout=3)
+        return None
+    except httpx.ConnectError:
+        return (
+            f"Cannot reach Ollama at {host}. "
+            "Make sure Ollama is installed and running (`ollama serve`), "
+            "or configure a different LLM host in Settings."
+        )
+    except Exception:
+        return None  # Unknown error — let the agent surface it normally
 
 class DataAnalyst:
     def __init__(self):
@@ -61,7 +77,13 @@ Final Answer: answer
         """
         user_query = history[-1]["content"] if history else ""
         thoughts = []
-        
+
+        cfg = config_manager.get_config()
+        host = cfg.get("llm_host", "http://localhost:11434")
+        err = _check_ollama_reachable(host)
+        if err:
+            return {"response": err, "thoughts": []}
+
         try:
             agent_executor = create_sql_agent(
                 llm=self.llm,

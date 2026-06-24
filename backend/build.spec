@@ -1,16 +1,19 @@
 # -*- mode: python ; coding: utf-8 -*-
+import os
 
 block_cipher = None
 
 a = Analysis(
     ['src/api/main.py'],
-    pathex=['..'], # Allow resolving 'backend' package from root
+    pathex=['..'],  # allow resolving 'backend' package from repo root
     binaries=[],
     datas=[
-        ('src', 'backend/src'),  # Map 'src' to 'backend/src' inside bundle so 'backend.src' imports work
-        # Add any other data files here
+        ('src', 'backend/src'),  # backend.src.* imports
+        # Playwright browsers are NOT bundled here — they live in the user's
+        # ~/Library/Caches/ms-playwright and the runtime hook points there.
     ],
     hiddenimports=[
+        # uvicorn internals not auto-detected
         'uvicorn.logging',
         'uvicorn.loops',
         'uvicorn.loops.auto',
@@ -21,10 +24,19 @@ a = Analysis(
         'uvicorn.protocols.websockets.auto',
         'uvicorn.lifespan',
         'uvicorn.lifespan.on',
+        # other deps
+        'sqlalchemy.dialects.sqlite',
+        'playwright',
+        'uvloop',
+        'anthropic',
+        'httpx',
+        'anyio',
+        'anyio._backends._asyncio',
+        'anyio._backends._trio',
     ],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=['playwright_hook.py'],
     excludes=[],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,

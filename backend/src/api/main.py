@@ -375,23 +375,21 @@ else:
 if __name__ == "__main__":
     import uvicorn
     import sys
-    
-    # Check if running as a PyInstaller bundle
+
+    port = int(os.environ.get("PORT", 8000))
+
     if getattr(sys, 'frozen', False):
         try:
-            # Production (Frozen)
-            uvicorn.run(app, host="127.0.0.1", port=8000, reload=False)
+            uvicorn.run(app, host="127.0.0.1", port=port, reload=False)
         except Exception as e:
             import traceback
             try:
-                log_path = os.path.join(get_user_data_dir(), "startup_crash.log")
+                log_path = os.path.join(str(get_user_data_dir()), "startup_crash.log")
                 with open(log_path, "w", encoding="utf-8") as f:
                     f.write(f"Startup Crash: {e}\n")
                     f.write(traceback.format_exc())
             except:
-                pass # Failed to write log
+                pass
             raise e
     else:
-        # Development
-        # Run the server with auto-reload
-        uvicorn.run("backend.src.api.main:app", host="0.0.0.0", port=8000, reload=True, reload_dirs=["backend"])
+        uvicorn.run("backend.src.api.main:app", host="0.0.0.0", port=port, reload=True, reload_dirs=["backend"])

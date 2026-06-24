@@ -1,4 +1,12 @@
-const BASE_URL = 'http://localhost:8000';
+// Docker web build: VITE_API_URL="" routes through nginx on the same origin.
+// Electron: port is passed as a query param by the main process.
+function getBaseUrl(): string {
+    const envUrl = import.meta.env.VITE_API_URL as string | undefined;
+    if (envUrl !== undefined) return envUrl;
+    const port = new URLSearchParams(window.location.search).get('port') ?? '8000';
+    return `http://localhost:${port}`;
+}
+const BASE_URL = getBaseUrl();
 
 export interface AutomationStatusResponse {
     status: 'idle' | 'login_needed' | 'otp_needed' | 'otp_required' | 'logged_in' | 'exporting' | 'ready_to_download' | 'downloading' | 'completed' | 'error' | 'Error' | 'Idle' | 'Processing';

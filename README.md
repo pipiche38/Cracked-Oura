@@ -50,6 +50,32 @@ Cracked Oura can leverage local LLMs to analyze your health data and provide ins
 
 <img width="1470" height="916" alt="Cracked Oura advisor" src="https://github.com/user-attachments/assets/e9ce6ac2-60da-486f-a01f-8cd03dce6337" />
 
+#### Setting up Ollama (required for AI Analyst)
+
+The AI Analyst uses [Ollama](https://ollama.com) to run a local LLM on your machine. Your data never leaves your computer.
+
+**macOS / Linux**
+```bash
+# Option 1 — Homebrew
+brew install ollama
+
+# Option 2 — direct download
+# Go to https://ollama.com and download the installer for your OS
+```
+
+**Windows**
+Download the installer from [ollama.com](https://ollama.com).
+
+**Start Ollama and pull a model**
+```bash
+ollama serve          # start the Ollama server (runs in background)
+ollama pull llama3.2  # ~2 GB, fast — good default
+# or
+ollama pull llama3.1  # ~4 GB, more capable
+```
+
+Once Ollama is running, the AI Analyst will connect automatically. If you see a "Cannot reach Ollama" error, make sure `ollama serve` is running in a terminal.
+
 ---
 
 ## Getting Started

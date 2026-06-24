@@ -1,4 +1,5 @@
-import { DashboardProvider, useDashboard } from "@/contexts/DashboardContext";
+import { DashboardProvider } from "@/contexts/DashboardContext";
+import { useDashboard } from "@/hooks/useDashboard";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { DashboardGrid } from "@/components/dashboard/DashboardGrid";
 import { Button } from "@/components/ui/button";

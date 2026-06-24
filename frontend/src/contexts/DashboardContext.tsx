@@ -52,7 +52,7 @@ interface DashboardContextType {
     data: any;
 }
 
-const DashboardContext = createContext<DashboardContextType | undefined>(undefined);
+export const DashboardContext = createContext<DashboardContextType | undefined>(undefined);
 
 export function DashboardProvider({ children }: { children: ReactNode }) {
     // --- State Definitions ---
@@ -271,10 +271,3 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     );
 }
 
-export function useDashboard() {
-    const context = useContext(DashboardContext);
-    if (context === undefined) {
-        throw new Error('useDashboard must be used within a DashboardProvider');
-    }
-    return context;
-}

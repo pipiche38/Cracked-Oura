@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,6 +21,8 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     const [error, setError] = useState<string | null>(null);
     const [logs, setLogs] = useState<string[]>([]);
     const [activeTab, setActiveTab] = useState<'automation' | 'layout'>('automation');
+    // true when OTP was triggered by a background sync (so we resume polling after submission)
+    const syncInitiatedOtp = useRef(false);
 
     const [dailySyncTime, setDailySyncTime] = useState("09:00");
 
@@ -89,7 +91,14 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
         try {
             const data = await api.submitOtp(otp);
             addLog(data.message);
-            setStatus('logged_in');
+            if (syncInitiatedOtp.current) {
+                // OTP came from a background sync — resume polling so the sync can finish
+                syncInitiatedOtp.current = false;
+                setStatus('exporting');
+                pollStatus();
+            } else {
+                setStatus('logged_in');
+            }
         } catch (err: any) {
             setError(err.message);
             addLog(`Error: ${err.message}`);
@@ -125,14 +134,19 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                     setStatus('ready_to_download');
                     setLoading(false);
                     addLog("Export ready for download!");
-                } else if (data.status === 'error') {
+                } else if (data.status === 'otp_required') {
+                    clearInterval(interval);
+                    syncInitiatedOtp.current = true;
+                    setStatus('otp_needed');
+                    setLoading(false);
+                    addLog("OTP required. Check your email and enter the code below.");
+                } else if (data.status === 'error' || data.status === 'Error') {
                     clearInterval(interval);
                     setStatus('error');
-                    setError("Export failed on server.");
+                    setError(data.message || "Export failed on server.");
                     setLoading(false);
                 } else {
-                    // Still processing
-                    addLog(`Status: ${data.status}`);
+                    addLog(`Status: ${data.status}${data.message ? ' — ' + data.message : ''}`);
                 }
             } catch (err) {
                 console.error("Polling error", err);

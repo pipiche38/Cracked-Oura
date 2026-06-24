@@ -34,20 +34,63 @@ logging.basicConfig(
 logger = logging.getLogger("API")
 logger.info(f"API Starting... Logging to {log_file}")
 
+def autoload_bundled_data() -> None:
+    """If the DB has no sleep data yet, auto-ingest from a bundled or env-specified CSV directory."""
+    import pathlib
+    from backend.src.models import Sleep
+
+    db = SessionLocal()
+    try:
+        has_data = db.query(Sleep).first() is not None
+    finally:
+        db.close()
+
+    if has_data:
+        return
+
+    data_dir_env = os.environ.get("OURA_AUTO_SEED_DIR")
+    if data_dir_env:
+        data_dir = pathlib.Path(data_dir_env)
+    else:
+        project_root = pathlib.Path(__file__).parent.parent.parent.parent
+        data_dir = project_root / "data" / "App Data"
+
+    if not data_dir.exists():
+        logger.info(f"Auto-seed: no data directory at {data_dir}, skipping.")
+        return
+
+    csv_files = sorted(data_dir.rglob("*.csv"))
+    if not csv_files:
+        logger.info(f"Auto-seed: no CSV files in {data_dir}, skipping.")
+        return
+
+    logger.info(f"Auto-seed: ingesting from {data_dir} ({len(csv_files)} CSV file(s))…")
+    db = SessionLocal()
+    try:
+        parser = OuraParser(db)
+        parser.parse_directory(str(data_dir))
+        logger.info("Auto-seed complete.")
+    except Exception as exc:
+        logger.error(f"Auto-seed failed: {exc}")
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     init_db()
-    
+    autoload_bundled_data()
+
     # Reset status on startup in case it was stuck
     cfg = config_manager.get_config()
     if cfg.get("status") not in ["Idle", "Error"]:
         logger.info("Startup: Resetting stuck status to Idle.")
         config_manager.update_status("Idle")
-        
+
     # Start background worker
     task = asyncio.create_task(background_worker())
-    
+
     yield
     
     # Shutdown (optional cleanup)

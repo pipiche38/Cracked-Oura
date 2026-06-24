@@ -1,4 +1,5 @@
 
+import asyncio
 import logging
 import os
 import shutil
@@ -35,6 +36,9 @@ logger = logging.getLogger("API")
 
 # Router Initialization
 router = APIRouter()
+
+# Event used to resume a background sync that paused waiting for OTP
+_otp_event: Optional[asyncio.Event] = None
 
 # -----------------------------------------------------------------------------
 # Data Models and request/response schemas
@@ -77,39 +81,47 @@ async def run_full_sync_task(db_session_factory):
     """
     Executes the full synchronization process:
     1. Request export from Oura Cloud (via playwright).
-    2. Wait for export generation.
+    2. Wait for export generation (pausing for OTP if required).
     3. Download the export zip.
     4. Ingest data into the local SQLite database.
     """
+    global _otp_event
     config_manager.update_status("Processing", message="Starting full sync...")
     try:
-        # Create temp dir for the download
         with tempfile.TemporaryDirectory() as temp_dir:
             config_manager.update_status("Processing", message="Requesting and waiting for export (this may take hours)...")
-            
-            # This step blocks while waiting for Oura to generate the export
+
             result = await automator.request_new_export_and_download(temp_dir)
-            
-            # Handle OTP requirement
+
+            # OTP required — pause and wait for the user to submit it
             if isinstance(result, dict) and result.get("status") == "otp_required":
-                config_manager.update_status("Error", message="OTP required. Please login manually in settings.")
-                logger.warning("Full sync failed: OTP required.")
-                return
+                logger.warning("Full sync paused: OTP required.")
+                _otp_event = asyncio.Event()
+                config_manager.update_status("otp_required", message="Check your email for the OTP code and enter it below.")
+                try:
+                    await asyncio.wait_for(_otp_event.wait(), timeout=300)
+                except asyncio.TimeoutError:
+                    logger.warning("OTP entry timed out.")
+                    config_manager.update_status("Error", message="OTP entry timed out. Please try syncing again.")
+                    return
+                finally:
+                    _otp_event = None
+
+                # OTP submitted — retry the export flow
+                config_manager.update_status("Processing", message="OTP accepted. Resuming sync...")
+                result = await automator.request_new_export_and_download(temp_dir)
 
             zip_path = result
-            
-            # Process successfully downloaded file
+
             if zip_path and isinstance(zip_path, str):
-                config_manager.update_status("Processing", message=f"Downloaded to {zip_path}. Ingesting...")
+                config_manager.update_status("Processing", message="Download complete. Ingesting data...")
                 logger.info(f"Full sync: Downloaded to {zip_path}. Ingesting...")
-                
-                # Ingest into Database
+
                 db = db_session_factory()
                 try:
                     parser = OuraParser(db)
                     parser.parse_zip(zip_path)
                     logger.info("Full sync: Ingestion complete.")
-                    
                     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     config_manager.update_status("Idle", message="Sync and ingestion complete!", last_run=now_str)
                 finally:
@@ -117,7 +129,7 @@ async def run_full_sync_task(db_session_factory):
             else:
                 logger.error("Full sync failed: No file downloaded.")
                 config_manager.update_status("Error", message="No file downloaded (timeout?)")
-                
+
     except Exception as e:
         logger.error(f"Full sync task error: {e}")
         config_manager.update_status("Error", message=f"Sync failed: {e}")
@@ -162,8 +174,12 @@ async def start_login(request: LoginRequest):
 @router.post("/api/automation/submit-otp")
 async def submit_otp(request: OTPRequest):
     """Submits the OTP code to the active Playwright session."""
+    global _otp_event
     try:
         result = await automator.submit_otp(request.otp)
+        # If a background sync is waiting for OTP, unblock it
+        if _otp_event and not _otp_event.is_set():
+            _otp_event.set()
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

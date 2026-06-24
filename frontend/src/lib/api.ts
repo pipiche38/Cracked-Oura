@@ -1,7 +1,7 @@
 const BASE_URL = 'http://localhost:8000';
 
 export interface AutomationStatusResponse {
-    status: 'idle' | 'login_needed' | 'otp_needed' | 'logged_in' | 'exporting' | 'ready_to_download' | 'downloading' | 'completed' | 'error';
+    status: 'idle' | 'login_needed' | 'otp_needed' | 'otp_required' | 'logged_in' | 'exporting' | 'ready_to_download' | 'downloading' | 'completed' | 'error' | 'Error' | 'Idle' | 'Processing';
     message?: string;
 }
 

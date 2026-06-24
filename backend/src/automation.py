@@ -251,16 +251,22 @@ class OuraAutomator:
 
     async def _check_otp_screen(self):
         """Checks if OTP screen is active and handles the 'Send Code' intermediate step if present."""
-        # Check for "Send code" intermediate page
-        intermediate_btn = self.page.locator("button[name='selectedId']")
-        otp_input_name = self.page.locator("input[name='otp']")
-        otp_input_id = self.page.locator("#otp-code")
+        # Prefer the email-code button by accessible text; fall back to the first selectedId button
+        # to avoid Playwright strict-mode failure when both passkey and email buttons are present.
+        email_btn = self.page.get_by_role("button", name="Email code")
+        generic_btn = self.page.locator("button[name='selectedId']").first
+        otp_input_name = self.page.locator("input[name='otp']").first
+        otp_input_id = self.page.locator("#otp-code").first
 
-        if await intermediate_btn.is_visible() and \
+        email_btn_visible = await email_btn.is_visible()
+        generic_btn_visible = await generic_btn.is_visible()
+
+        if (email_btn_visible or generic_btn_visible) and \
            not await otp_input_name.is_visible() and \
            not await otp_input_id.is_visible():
+            btn = email_btn if email_btn_visible else generic_btn
             logger.info("Found intermediate 'Send Code' button. Clicking...")
-            await intermediate_btn.click()
+            await btn.click()
             await self.page.wait_for_timeout(3000)
 
         # Check for OTP input visibility

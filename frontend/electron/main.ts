@@ -2,7 +2,7 @@ import { app, BrowserWindow, Tray, Menu, nativeImage } from 'electron';
 import path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 
-let mainWindow: BrowserWindow | null;
+let mainWindow: BrowserWindow | null = null;
 let pythonProcess: ChildProcess | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;

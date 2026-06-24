@@ -1,7 +1,7 @@
 import pandas as pd
 import uuid
 import logging
-from backend.src.models import HeartRate, Temperature, RingConfiguration, Tag, CardiovascularAge, RingBattery
+from backend.src.models import HeartRate, Temperature, RingConfiguration, Tag, CardiovascularAge, RingBattery, Vo2Max
 from backend.src.ingestion.base import IngestionBase
 
 logger = logging.getLogger("CommonProcessor")
@@ -103,12 +103,37 @@ class CommonProcessor(IngestionBase):
         records = []
         for _, row in df.iterrows():
             try:
+                day_val = self._parse_date(row.get('day'))
+                if not day_val:
+                    logger.warning(f"Skipping cardiovascular_age row with no day: id={row.get('id')}")
+                    continue
                 rec = CardiovascularAge(
                     id=str(row.get('id', uuid.uuid4())),
-                    day=self._parse_date(row.get('day')),
+                    day=day_val,
                     vascular_age=self._parse_int(row.get('vascular_age'))
                 )
                 records.append(rec)
             except:
                 pass
+        logger.info(f"CardiovascularAge: {len(records)} valid records parsed")
         self._upsert(CardiovascularAge, records, ['day'])
+
+    def process_vo2max(self, df: pd.DataFrame):
+        records = []
+        for _, row in df.iterrows():
+            try:
+                day_val = self._parse_date(row.get('day'))
+                if not day_val:
+                    logger.warning(f"Skipping vo2max row with no day: id={row.get('id')}")
+                    continue
+                rec = Vo2Max(
+                    id=str(row.get('id', uuid.uuid4())),
+                    day=day_val,
+                    timestamp=self._parse_datetime(row.get('timestamp')),
+                    vo2_max=self._parse_float(row.get('vo2_max'))
+                )
+                records.append(rec)
+            except:
+                pass
+        logger.info(f"Vo2Max: {len(records)} valid records parsed")
+        self._upsert(Vo2Max, records, ['day'])

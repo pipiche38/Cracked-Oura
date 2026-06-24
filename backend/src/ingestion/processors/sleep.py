@@ -52,6 +52,7 @@ class SleepProcessor(IngestionBase):
                 breathing_disturbance_index=breathing_index
             )
             records.append(rec)
+        logger.info(f"Sleep: {len(records)} valid records parsed")
         self._upsert(Sleep, records, ['day'])
 
     def process_sleep_session(self, file_path: str):
@@ -117,4 +118,5 @@ class SleepProcessor(IngestionBase):
                 logger.error(f"Error parsing sleep_session row: {e}")
                 continue
         
+        logger.info(f"SleepSession: {len(records)} valid records parsed")
         self._upsert(SleepSession, records, ['id'])

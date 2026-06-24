@@ -22,71 +22,39 @@ class IngestionBase:
         self.session = session
 
     def _read_csv_robust(self, file_path: str) -> Optional[pd.DataFrame]:
-        """Reads CSV handling Oura's sometimes malformed quoting and mismatched column counts."""
+        """Reads CSV using pandas, auto-detecting ; vs , delimiter."""
         if not os.path.exists(file_path):
             return None
-            
-        with open(file_path, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-        
-        if not lines:
+
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                first_line = f.readline()
+        except Exception:
             return None
 
-        # Parse header
-        header = lines[0].strip().split(';')
-        raw_data_lines = lines[1:]
-        
-        # Heuristic for specific Oura files known to have column alignment issues
-        if 'dailyactivity.csv' in file_path.lower() or 'sleepmodel.csv' in file_path.lower():
-            # Check for column mismatch in first data row
-            if raw_data_lines and len(header) > len(raw_data_lines[0].split(';')):
-                # Data is often aligned to the end (missing start columns)
-                offset = len(header) - len(raw_data_lines[0].split(';'))
-                
-                new_rows = []
-                for line in raw_data_lines:
-                    line = line.strip()
-                    if not line: continue
-                    
-                    # Remove wrapping quotes
-                    if line.startswith('"') and line.endswith('"'):
-                        line = line[1:-1]
-                        
-                    parts = line.split(';')
-                    # Pad missing start columns with None
-                    padded_parts = [None] * offset + parts
-                    new_rows.append(padded_parts)
-                
-                df = pd.DataFrame(new_rows, columns=header)
-                self._clean_dataframe(df)
-                return df
+        if not first_line.strip():
+            return None
 
-        # Standard processing for other files
-        data = []
-        for line in raw_data_lines:
-            line = line.strip()
-            if not line: continue
-            
-            if line.startswith('"') and line.endswith('"'):
-                line = line[1:-1]
-            
-            parts = line.split(';')
-            
-            # Auto-generate ID if missing but header expects it
-            if len(parts) == len(header) - 1 and header[0] == 'id':
-                parts.insert(0, str(uuid.uuid4()))
-            
-            # Handle trailing empty columns
-            if len(parts) < len(header):
-                parts += [None] * (len(header) - len(parts))
-            
-            # Truncate extra columns
-            if len(parts) > len(header):
-                 parts = parts[:len(header)]
-                 
-            data.append(parts)
-            
-        df = pd.DataFrame(data, columns=header)
+        delimiter = ';' if ';' in first_line else ','
+        filename = os.path.basename(file_path)
+        logger.debug(f"[{filename}] detected delimiter: '{delimiter}'")
+
+        try:
+            df = pd.read_csv(
+                file_path,
+                sep=delimiter,
+                encoding='utf-8',
+                on_bad_lines='skip',
+            )
+        except Exception as e:
+            logger.error(f"Error reading CSV {file_path}: {e}")
+            return None
+
+        if df is None or df.empty:
+            logger.warning(f"[{filename}] empty or unreadable")
+            return None
+
+        logger.debug(f"[{filename}] {len(df)} rows, columns: {list(df.columns)}")
         self._clean_dataframe(df)
         return df
 
@@ -115,10 +83,10 @@ class IngestionBase:
 
         try:
             stmt = insert(model).values(data)
-            
+
             # Columns to update on conflict (all except the index/primary key)
             update_dict = {col.name: col for col in stmt.excluded if col.name not in index_elements}
-            
+
             if update_dict:
                 stmt = stmt.on_conflict_do_update(
                     index_elements=index_elements,
@@ -129,6 +97,7 @@ class IngestionBase:
 
             self.session.execute(stmt)
             self.session.commit()
+            logger.info(f"[{model.__tablename__}] upserted {len(data)} records")
         except Exception as e:
             self.session.rollback()
             logger.error(f"Error in _upsert for {model.__tablename__}: {e}")

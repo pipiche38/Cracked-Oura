@@ -1,7 +1,9 @@
 import os
+import glob
 import zipfile
 import tempfile
 import logging
+from typing import Optional
 import pandas as pd
 from sqlalchemy.orm import Session
 from .base import IngestionBase
@@ -22,6 +24,44 @@ class OuraParser(IngestionBase):
         self.readiness_processor = ReadinessProcessor(session)
         self.common_processor = CommonProcessor(session)
 
+    def _find_csvs(self, dir_path: str, base_name: str) -> list:
+        """Return all CSV paths matching base_name exactly or with a date-range suffix.
+
+        Matches:
+          sleep.csv
+          sleep_2024-01-01_2024-12-31.csv
+          sleep_2024-01-01.csv
+        """
+        stem = base_name[:-4] if base_name.endswith('.csv') else base_name
+        exact = os.path.join(dir_path, f"{stem}.csv")
+        dated = sorted(glob.glob(os.path.join(dir_path, f"{stem}_*.csv")))
+        seen = set()
+        results = []
+        for p in ([exact] + dated):
+            if p not in seen and os.path.exists(p):
+                seen.add(p)
+                results.append(p)
+        return results
+
+    def _read_csv_any(self, dir_path: str, base_name: str) -> Optional[pd.DataFrame]:
+        """Read and concatenate all CSV files matching base_name (exact or date-ranged)."""
+        paths = self._find_csvs(dir_path, base_name)
+        if not paths:
+            return None
+        dfs = []
+        for p in paths:
+            df = self._read_csv_robust(p)
+            if df is not None and not df.empty:
+                logger.debug(f"Read {os.path.basename(p)}: {len(df)} rows")
+                dfs.append(df)
+        if not dfs:
+            return None
+        if len(dfs) == 1:
+            return dfs[0]
+        combined = pd.concat(dfs, ignore_index=True)
+        logger.info(f"{base_name}: combined {len(paths)} files → {len(combined)} rows")
+        return combined
+
     def parse_zip(self, zip_path: str):
         """Extracts ZIP and parses all contained CSVs, handling nested folders."""
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -31,35 +71,34 @@ class OuraParser(IngestionBase):
             except zipfile.BadZipFile:
                 logger.error(f"Error: Invalid ZIP file at {zip_path}")
                 return
-            
+
             # Recursively search for a directory containing data files
             target_dir = temp_dir
             found_csvs = []
             for root, dirs, files in os.walk(temp_dir):
-                if "dailysleep.csv" in files or "dailyactivity.csv" in files:
+                if any(f.startswith("dailysleep") or f.startswith("dailyactivity") for f in files):
                     target_dir = root
                     found_csvs = files
                     break
-            
+
             if not found_csvs:
-                 logger.warning("No Oura CSV files found in the ZIP archive!")
+                logger.warning("No Oura CSV files found in the ZIP archive!")
             else:
-                 logger.info(f"Found data in: {target_dir}")
-            
+                logger.info(f"Found data in: {target_dir}")
+
             self.parse_directory(target_dir)
 
     def parse_directory(self, dir_path: str):
         """Parses all supported CSV files in the directory, merging related files."""
-        
+
         # --- 1. Sleep Data ---
-        # Merge dailysleep.csv + sleeptime.csv + dailyspo2.csv
-        sleep_df = self._read_csv_robust(os.path.join(dir_path, "dailysleep.csv"))
-        sleeptime_df = self._read_csv_robust(os.path.join(dir_path, "sleeptime.csv"))
-        spo2_df = self._read_csv_robust(os.path.join(dir_path, "dailyspo2.csv"))
-        
+        # Merge dailysleep + sleeptime + dailyspo2
+        sleep_df = self._read_csv_any(dir_path, "dailysleep.csv")
+        sleeptime_df = self._read_csv_any(dir_path, "sleeptime.csv")
+        spo2_df = self._read_csv_any(dir_path, "dailyspo2.csv")
+
         merged_sleep = sleep_df
-        
-        # Merge sleeptime
+
         if sleeptime_df is not None and not sleeptime_df.empty:
             if merged_sleep is not None and not merged_sleep.empty:
                 if 'day' in merged_sleep.columns and 'day' in sleeptime_df.columns:
@@ -67,7 +106,6 @@ class OuraParser(IngestionBase):
             else:
                 merged_sleep = sleeptime_df
 
-        # Merge spo2
         if spo2_df is not None and not spo2_df.empty:
             if merged_sleep is not None and not merged_sleep.empty:
                 if 'day' in merged_sleep.columns and 'day' in spo2_df.columns:
@@ -80,9 +118,8 @@ class OuraParser(IngestionBase):
             self.sleep_processor.process_sleep(merged_sleep)
 
         # --- 2. Readiness Data ---
-        # Merge dailyreadiness.csv + dailystress.csv
-        readiness_df = self._read_csv_robust(os.path.join(dir_path, "dailyreadiness.csv"))
-        stress_df = self._read_csv_robust(os.path.join(dir_path, "dailystress.csv"))
+        readiness_df = self._read_csv_any(dir_path, "dailyreadiness.csv")
+        stress_df = self._read_csv_any(dir_path, "dailystress.csv")
 
         if readiness_df is not None and not readiness_df.empty:
             if stress_df is not None and not stress_df.empty:
@@ -100,49 +137,46 @@ class OuraParser(IngestionBase):
             self.readiness_processor.process_readiness(stress_df)
 
         # --- 3. Activity & Other Data ---
-        
-        # Activity
-        act_df = self._read_csv_robust(os.path.join(dir_path, "dailyactivity.csv"))
+
+        act_df = self._read_csv_any(dir_path, "dailyactivity.csv")
         if act_df is not None and not act_df.empty:
             logger.info("Processing Activity Data...")
             self.activity_processor.process_activity(act_df)
 
-        # Resilience
-        res_df = self._read_csv_robust(os.path.join(dir_path, "dailyresilience.csv"))
+        res_df = self._read_csv_any(dir_path, "dailyresilience.csv")
         if res_df is not None and not res_df.empty:
             self.readiness_processor.process_resilience(res_df)
 
-        # Stress (Daytime) - Merged into Activity by processor
-        day_stress_df = self._read_csv_robust(os.path.join(dir_path, "daytimestress.csv"))
+        day_stress_df = self._read_csv_any(dir_path, "daytimestress.csv")
         if day_stress_df is not None and not day_stress_df.empty:
             self.activity_processor.process_stress(day_stress_df)
 
-        # File-based processors
+        # --- 4. File-based processors (pass file path directly) ---
         path_map = {
-            "sleepmodel.csv": self.sleep_processor.process_sleep_session,
+            "sleep.csv": self.sleep_processor.process_sleep_session,
             "workout.csv": self.activity_processor.process_workout,
             "session.csv": self.activity_processor.process_meditation,
             "heartrate.csv": self.common_processor.process_heart_rate,
             "temperature.csv": self.common_processor.process_temperature,
         }
 
-        for filename, func in path_map.items():
-            fpath = os.path.join(dir_path, filename)
-            if os.path.exists(fpath):
-                logger.info(f"Processing {filename}...")
+        for base_name, func in path_map.items():
+            for fpath in self._find_csvs(dir_path, base_name):
+                logger.info(f"Processing {os.path.basename(fpath)}...")
                 func(fpath)
 
-        # DataFrame-based common processors
+        # --- 5. DataFrame-based processors ---
         common_map = {
             "ringconfiguration.csv": self.common_processor.process_ring_configuration,
             "enhancedtag.csv": self.common_processor.process_tag,
+            "tag.csv": self.common_processor.process_tag,
             "dailycardiovascularage.csv": self.common_processor.process_cardiovascular_age,
             "ringbatterylevel.csv": self.common_processor.process_ring_battery,
+            "vo2max.csv": self.common_processor.process_vo2max,
         }
 
-        for filename, func in common_map.items():
-            fpath = os.path.join(dir_path, filename)
-            if os.path.exists(fpath):
-                df = self._read_csv_robust(fpath)
-                if df is not None and not df.empty:
-                    func(df)
+        for base_name, func in common_map.items():
+            df = self._read_csv_any(dir_path, base_name)
+            if df is not None and not df.empty:
+                logger.info(f"Processing {base_name}...")
+                func(df)

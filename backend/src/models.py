@@ -198,3 +198,11 @@ class CardiovascularAge(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True)
     day: Mapped[date] = mapped_column(Date, unique=True, index=True)
     vascular_age: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+class Vo2Max(Base):
+    __tablename__ = "vo2max"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    day: Mapped[date] = mapped_column(Date, unique=True, index=True)
+    timestamp: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    vo2_max: Mapped[Optional[float]] = mapped_column(Float, nullable=True)

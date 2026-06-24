@@ -41,6 +41,7 @@ class ReadinessProcessor(IngestionBase):
             )
             records.append(rec)
         
+        logger.info(f"Readiness: {len(records)} valid records parsed")
         self._upsert(Readiness, records, ['day'])
 
     def process_resilience(self, df: pd.DataFrame):
@@ -68,4 +69,5 @@ class ReadinessProcessor(IngestionBase):
                 logger.error(f"Error parsing daily_resilience row: {e}")
                 continue
         
+        logger.info(f"Resilience: {len(records)} valid records parsed")
         self._upsert(Resilience, records, ['day'])

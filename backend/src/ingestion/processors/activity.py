@@ -68,6 +68,7 @@ class ActivityProcessor(IngestionBase):
                 logger.error(f"Error processing activity row {index}: {e}")
                 continue
         
+        logger.info(f"Activity: {len(records)} valid records parsed")
         self._upsert(Activity, records, ['day'])
 
     def process_workout(self, file_path: str):
@@ -78,10 +79,17 @@ class ActivityProcessor(IngestionBase):
         records = []
         for _, row in df.iterrows():
             try:
+                day_val = self._parse_date(row.get('day'))
+                start_time = self._parse_datetime(row.get('start_datetime'))
+                if not day_val and start_time:
+                    day_val = start_time.date()
+                if not day_val:
+                    logger.warning(f"Skipping workout row with no day: id={row.get('id')}")
+                    continue
                 workout = Workout(
                     id=str(row.get('id', uuid.uuid4())),
-                    day=self._parse_date(row.get('day')),
-                    start_time=self._parse_datetime(row.get('start_datetime')),
+                    day=day_val,
+                    start_time=start_time,
                     end_time=self._parse_datetime(row.get('end_datetime')),
                     activity=row.get('activity'),
                     calories=self._parse_float(row.get('calories')),
@@ -95,6 +103,7 @@ class ActivityProcessor(IngestionBase):
                 logger.error(f"Error parsing workout row: {e}")
                 continue
         
+        logger.info(f"Workout: {len(records)} valid records parsed")
         self._upsert(Workout, records, ['id'])
 
     def process_meditation(self, file_path: str):
@@ -105,10 +114,17 @@ class ActivityProcessor(IngestionBase):
         records = []
         for _, row in df.iterrows():
             try:
+                day_val = self._parse_date(row.get('day'))
+                start_time = self._parse_datetime(row.get('start_datetime'))
+                if not day_val and start_time:
+                    day_val = start_time.date()
+                if not day_val:
+                    logger.warning(f"Skipping meditation row with no day: id={row.get('id')}")
+                    continue
                 session = Meditation(
                     id=str(row.get('id', uuid.uuid4())),
-                    day=self._parse_date(row.get('day')),
-                    start_time=self._parse_datetime(row.get('start_datetime')),
+                    day=day_val,
+                    start_time=start_time,
                     end_time=self._parse_datetime(row.get('end_datetime')),
                     type=row.get('type'),
                     mood=row.get('mood')
@@ -118,6 +134,7 @@ class ActivityProcessor(IngestionBase):
                 logger.error(f"Error parsing session row: {e}")
                 continue
         
+        logger.info(f"Meditation: {len(records)} valid records parsed")
         self._upsert(Meditation, records, ['id'])
 
     def process_stress(self, df: pd.DataFrame):

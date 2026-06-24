@@ -1,22 +1,16 @@
 from fastapi import FastAPI, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
-from backend.src.api.routes import router
-from backend.src.database import init_db
-
-import asyncio
-import logging
+from fastapi.staticfiles import StaticFiles
+from contextlib import asynccontextmanager
+from pydantic import BaseModel
 from datetime import datetime, timedelta
+from backend.src.api.routes import router
+from backend.src.database import init_db, SessionLocal
 from backend.src.automation import automator
 from backend.src.ingestion import OuraParser
-from backend.src.database import SessionLocal
 from backend.src.config import config_manager
-import os
-from pydantic import BaseModel
-
-from contextlib import asynccontextmanager
-
-# Configure logging
 from backend.src.paths import get_user_data_dir
+import asyncio
 import logging
 import os
 
@@ -213,9 +207,8 @@ async def run_download_existing_task():
         automator.email = cfg.get("email", "")
         
         # Use user data dir for downloads
-        from backend.src.paths import get_user_data_dir
         save_dir = str(get_user_data_dir())
-        
+
         result = await automator.download_existing_export(save_dir=save_dir)
         
         if isinstance(result, dict) and result.get("status") == "otp_required":
@@ -278,7 +271,6 @@ async def run_ingestion_task(force=False):
         config_manager.update_status("Running Automation...")
         
         # Use user data dir for downloads
-        from backend.src.paths import get_user_data_dir
         save_dir = str(get_user_data_dir())
 
         # This function handles login, requesting, waiting, and downloading
@@ -369,11 +361,7 @@ async def background_worker():
             logger.error(f"Background worker loop error: {e}")
             await asyncio.sleep(60)
 
-# Mount Static Files
-from fastapi.staticfiles import StaticFiles
-import os
-
-# Robustly find the frontend/dist directory relative to this file
+# Mount Static Files — find frontend/dist relative to this file
 # engine/src/api/main.py -> ../../../frontend/dist
 current_dir = os.path.dirname(os.path.abspath(__file__))
 dist_dir = os.path.join(current_dir, "../../../frontend/dist")
@@ -394,11 +382,7 @@ if __name__ == "__main__":
             # Production (Frozen)
             uvicorn.run(app, host="127.0.0.1", port=8000, reload=False)
         except Exception as e:
-            # Emergency logging if startup fails
-            from backend.src.paths import get_user_data_dir
-            import os
             import traceback
-            
             try:
                 log_path = os.path.join(get_user_data_dir(), "startup_crash.log")
                 with open(log_path, "w", encoding="utf-8") as f:

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { createContext, useState, useEffect, type ReactNode } from 'react';
 import type { WidgetInstance, Dashboard } from '@/types';
 import { useOuraData } from '@/hooks/useOuraData';
 import { useDashboardPersistence } from '@/hooks/useDashboardPersistence';
